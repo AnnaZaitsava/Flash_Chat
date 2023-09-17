@@ -11,15 +11,13 @@ import FirebaseAuth
 import FirebaseFirestore
 
 class ChatViewController: UIViewController {
+    
+    let db = Firestore.firestore()
 
     @IBOutlet weak var tableView: UITableView!
     @IBOutlet weak var messageTextfield: UITextField!
     
-    var messages: [Message] = [
-    Message(sender: "1@mail.ru", body: "Hi!"),
-    Message(sender: "a@mail.ru", body: "Hey!"),
-    Message(sender: "1@mail.ru", body: "What's up?")
-    ]
+    var messages: [Message] = []
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -30,10 +28,62 @@ class ChatViewController: UIViewController {
         
         tableView.register(UINib(nibName: K.cellNibName, bundle: nil), forCellReuseIdentifier: K.cellIdentifier)
         
+        loadMessages()
+        
+    }
+    
+    func loadMessages(){
+        
+        db.collection(K.FStore.collectionName)
+            .order(by: K.FStore.dateField)
+            .addSnapshotListener { querySnapshot, error in
+                
+            self.messages = []
+            
+            if let err = error {
+                print("Issue with retrieving from firestore, \(err)")
+            } else {
+                if let snapshotDocuments = querySnapshot?.documents {
+                    for doc in snapshotDocuments {
+                        let data = doc.data()
+                        if let messageSender = data[K.FStore.senderField] as? String, let messageBody = data[K.FStore.bodyField] as? String {
+                            let newMessage = Message(sender: messageSender, body: messageBody)
+                            self.messages.append(newMessage)
+                            
+                            DispatchQueue.main.async {
+                                                               self.tableView.reloadData()
+                                                            let indexPath = IndexPath(row: self.messages.count - 1, section: 0)
+                                                            self.tableView.scrollToRow(at: indexPath, at: .top, animated: false)
+                                                        }
+                        }
+                    }
+                }
+            }
+        }
     }
     
     @IBAction func sendPressed(_ sender: UIButton) {
-    }
+        
+        if let messageBody = messageTextfield.text, let messageSender = Auth.auth().currentUser?.email {
+                    db.collection(K.FStore.collectionName).addDocument(data: [
+                        K.FStore.senderField: messageSender,
+                        K.FStore.bodyField: messageBody,
+                        K.FStore.dateField: Date().timeIntervalSince1970
+                    ]) { (error) in
+                        if let err = error {
+                            print("There was an issue saving data to firestore, \(err)")
+                        } else {
+                            print("Successfully saved data.")
+                            
+                            DispatchQueue.main.async {
+                                 self.messageTextfield.text = ""
+                                
+                            }
+                        }
+                    }
+                }
+            }
+        
 
     @IBAction func logOutPressed(_ sender: UIBarButtonItem) {
         
@@ -58,9 +108,6 @@ extension ChatViewController: UITableViewDataSource {
         
         cell.label.text = messages[indexPath.row].body
         
-//        var content = cell.defaultContentConfiguration()
-//        content.text = messages[indexPath.row].body
-//            cell.contentConfiguration = content
         
        return cell
     }
